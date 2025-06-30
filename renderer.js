@@ -25,7 +25,7 @@ async function initializeStatus() {
 
 function updateStatusDisplay(status) {
     if (status.status === 'running') {
-        serverStatusSpan.textContent = `Running`;
+        serverStatusSpan.textContent = `稼働中`;
         serverStatusSpan.style.color = 'green';
         currentPortSpan.textContent = status.port;
         startServerBtn.disabled = true;
@@ -39,7 +39,7 @@ function updateStatusDisplay(status) {
         importUsersBtn.disabled = false; 
         csvFileInput.disabled = false;
     } else {
-        serverStatusSpan.textContent = `Stopped`;
+        serverStatusSpan.textContent = `停止中`;
         serverStatusSpan.style.color = 'red';
         currentPortSpan.textContent = 'N/A';
         startServerBtn.disabled = false;

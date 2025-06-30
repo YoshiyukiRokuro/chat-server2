@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Chat Server Controller</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>サーバーコントロール</title>
     <style>
         body { font-family: sans-serif; padding: 20px; }
         #controls, #import-users { margin-bottom: 20px; border: 1px solid #ccc; padding: 15px; border-radius: 8px; background-color: #f9f9f9; }
@@ -30,26 +31,26 @@
     </style>
 </head>
 <body>
-    <h1>Chat Server Controller</h1>
+    <h1>サーバーコントロール</h1>
 
     <div id="controls">
         <div>
-            <label for="portInput">Server Port:</label>
+            <label for="portInput">サーバーポート番号:</label>
             <input type="number" id="portInput" value="3000" min="1024" max="65535">
             <button id="startServer">サーバー起動</button>
             <button id="stopServer" disabled>サーバー終了</button>
         </div>
         <div style="margin-top: 10px;">
-            <label for="dbPathInput">Database Path:</label>
+            <label for="dbPathInput">データベースファイルパス:</label>
             <input type="text" id="dbPathInput" readonly>
             <button id="browseDbPath">参照</button>
             <button id="saveDbPath">保存</button>
         </div>
 
         <div id="status-info">
-            <strong>Server Status: <span id="serverStatus">Stopped</span></strong>
-            <strong>Current Port: <span id="currentPort">N/A</span></strong>
-            <strong>Database Path: <span id="displayedDbPath">Loading...</span></strong>
+            <strong>サーバー稼働状態: <span id="serverStatus">停止中</span></strong>
+            <strong>クライアントポート番号: <span id="currentPort">N/A</span></strong>
+            <strong>データベースファイルパス: <span id="displayedDbPath">読み込み中...</span></strong>
         </div>
     </div>
 
@@ -62,7 +63,7 @@
         </div>
     </div>
 
-    <h2>Logs</h2>
+    <h2>サーバーログ</h2>
     <div id="logs"></div>
 
     <script src="renderer.js"></script>
