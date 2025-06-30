@@ -5,7 +5,8 @@
   "main": "server.js",
   "bin": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "pkg ."
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
