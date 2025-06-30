@@ -189,7 +189,7 @@ app.whenReady().then(() => {
   // 【追加】ファイル選択ダイアログを表示するIPCハンドラ
   ipcMain.handle('open-file-dialog', async (event) => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openFile', 'openDirectory', 'createDirectory'], // ファイルまたはディレクトリを選択可能
+      properties: ['openFile'], // ファイルを選択可能
       filters: [
         { name: 'SQLite Database', extensions: ['sqlite', 'db', 'sqlite3'] },
         { name: 'All Files', extensions: ['*'] }
