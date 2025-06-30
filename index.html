@@ -14,28 +14,38 @@
         .log-warn { color: #ffcc00; } /* Yellow */
         .log-error { color: #ff6666; } /* Red */
         .log-fatal { color: #ff0000; font-weight: bold; } /* Bright Red, Bold */
-        input[type="number"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px; }
+        input[type="number"], input[type="text"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; } /* input[type="text"] を追加 */
+        input#portInput { width: 80px; } /* ポート番号の幅を調整 */
+        input#dbPathInput { width: calc(100% - 130px); margin-right: 5px; } /* データベースパス入力の幅を調整 */
         button { padding: 10px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; }
         button#startServer { background-color: #28a745; } /* Green */
         button#stopServer { background-color: #dc3545; } /* Red */
         button#startServer:disabled { background-color: #6c757d; cursor: not-allowed; }
         button#stopServer:disabled { background-color: #6c757d; cursor: not-allowed; }
+        button#browseDbPath { background-color: #007bff; } /* Blue for browse button */
+        button#saveDbPath { background-color: #17a2b8; } /* Cyan for save button */
     </style>
 </head>
 <body>
     <h1>Chat Server Controller</h1>
 
     <div id="controls">
-        <label for="portInput">Server Port:</label>
-        <input type="number" id="portInput" value="3000" min="1024" max="65535">
-        <button id="startServer">サーバー起動</button>
-        <button id="stopServer" disabled>サーバー終了</button>
+        <div>
+            <label for="portInput">Server Port:</label>
+            <input type="number" id="portInput" value="3000" min="1024" max="65535">
+            <button id="startServer">サーバー起動</button>
+            <button id="stopServer" disabled>サーバー終了</button>
+        </div>
+        <div style="margin-top: 10px;">
+            <label for="dbPathInput">Database Path:</label>
+            <input type="text" id="dbPathInput" readonly> <button id="browseDbPath">参照</button>
+            <button id="saveDbPath">保存</button>
+        </div>
 
         <div id="status-info">
             <strong>Server Status: <span id="serverStatus">Stopped</span></strong>
             <strong>Current Port: <span id="currentPort">N/A</span></strong>
-            <strong>Database Path: <span id="dbPath">Loading...</span></strong>
-        </div>
+            <strong>Database Path: <span id="displayedDbPath">Loading...</span></strong> </div>
     </div>
 
     <h2>Logs</h2>

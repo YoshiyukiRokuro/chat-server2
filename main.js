@@ -2,32 +2,75 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const { fork } = require('child_process');
+const fs = require('fs'); // fsモジュールを追加
 
-let serverProcess = null; // サーバーの子プロセスを保持する変数
-let currentPort = 3000;   // 現在のポート番号
-let isServerRunning = false; // サーバーが実行中かどうかのフラグ
-const SECRET_KEY = process.env.SECRET_KEY || 'your-default-secret-key'; // 環境変数から取得
+let serverProcess = null;
+let currentPort = 3000;
+let isServerRunning = false;
+const SECRET_KEY = process.env.SECRET_KEY || 'your-default-secret-key';
+
+// --- 設定ファイルのパスとデフォルト値 ---
+const settingsFilePath = path.join(app.getPath('userData'), 'settings.json');
+
+let appSettings = {
+  port: 3000,
+  dbPath: path.join(app.getPath('userData'), 'chat-database.sqlite')
+};
+
+// --- 設定の読み込み/保存関数 ---
+function loadSettings() {
+  try {
+    if (fs.existsSync(settingsFilePath)) {
+      const data = fs.readFileSync(settingsFilePath, 'utf8');
+      const loadedSettings = JSON.parse(data);
+      // 既存の設定にロードした設定をマージ（デフォルト値を保持しつつ）
+      appSettings = { ...appSettings, ...loadedSettings };
+      // データベースパスが設定されていない場合はデフォルトに戻す
+      if (!appSettings.dbPath) {
+        appSettings.dbPath = path.join(app.getPath('userData'), 'chat-database.sqlite');
+      }
+      // ポートが設定されていない場合はデフォルトに戻す
+      if (!appSettings.port) {
+        appSettings.port = 3000;
+      }
+      console.log('Settings loaded:', appSettings);
+    }
+  } catch (error) {
+    console.error('Failed to load settings:', error);
+    // ロードに失敗してもデフォルト設定で続行
+  }
+}
+
+function saveSettings() {
+  try {
+    fs.writeFileSync(settingsFilePath, JSON.stringify(appSettings, null, 2), 'utf8');
+    console.log('Settings saved:', appSettings);
+  } catch (error) {
+    console.error('Failed to save settings:', error);
+    dialog.showErrorBox('設定保存エラー', `設定の保存に失敗しました: ${error.message}`);
+  }
+}
 
 function createWindow() {
+  loadSettings(); // ウィンドウ作成時に設定を読み込む
+
   const mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true, // セキュリティのため推奨
-      nodeIntegration: false, // セキュリティのため推奨
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   });
 
   mainWindow.loadFile('index.html');
 
-  // 開発ツールを開く (開発時のみ)
-  // mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools(); // 開発時のみ有効にする
 
-  // ウィンドウが閉じられるときにサーバープロセスを終了
   mainWindow.on('closed', () => {
     if (serverProcess) {
-      serverProcess.kill('SIGTERM'); // SIGTERMで優雅に終了を試みる
+      serverProcess.kill('SIGTERM');
       serverProcess = null;
       isServerRunning = false;
       console.log('Server process terminated due to window close.');
@@ -48,19 +91,20 @@ app.whenReady().then(() => {
 
   // サーバーの起動リクエストを処理
   ipcMain.handle('start-server', async (event, port) => {
-    console.log(`Received start-server request for port: ${port}`); // これを追加
+    // 起動前にポート設定を更新して保存
+    appSettings.port = port;
+    saveSettings();
+
     if (isServerRunning && port === currentPort) {
-      console.log("Received message from server child process:", msg); // これを追加
       const message = `Server is already running on port ${currentPort}.`;
       console.log(message);
       mainWindow.webContents.send('server-log', { message, level: 'warn' });
       return { success: true, port: currentPort, status: 'running' };
     }
 
-    // サーバーが異なるポートで実行中の場合、まず停止を試みる
     if (isServerRunning) {
       await stopServerInternal(mainWindow);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // 停止を待つ
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     return new Promise((resolve) => {
@@ -71,14 +115,14 @@ app.whenReady().then(() => {
         return resolve({ success: false, error });
       }
 
-      const dbPath = path.join(app.getPath('userData'), 'chat-database.sqlite');
+      // サーバープロセスに渡すdbPathは現在の設定値を使用
+      const dbPathToUse = appSettings.dbPath; 
       
       serverProcess = fork(path.join(__dirname, 'server.js'), [], {
-        env: { ...process.env, SECRET_KEY: SECRET_KEY }, // SECRET_KEYを環境変数として子プロセスに渡す
-        stdio: ['pipe', 'pipe', 'pipe', 'ipc'] // stdout, stderr, ipc
+        env: { ...process.env, SECRET_KEY: SECRET_KEY },
+        stdio: ['pipe', 'pipe', 'pipe', 'ipc']
       });
 
-      // 子プロセスからのメッセージをリッスン
       serverProcess.on('message', (msg) => {
         if (msg.type === 'server-status') {
           isServerRunning = (msg.status === 'running');
@@ -90,7 +134,7 @@ app.whenReady().then(() => {
       });
 
       serverProcess.on('exit', (code, signal) => {
-        if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGINT') { // 意図しない終了の場合
+        if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGINT') {
           const errorMessage = `Server process exited with code ${code} and signal ${signal}`;
           mainWindow.webContents.send('server-log', { message: errorMessage, level: 'error' });
           dialog.showErrorBox('サーバーエラー', errorMessage);
@@ -112,8 +156,8 @@ app.whenReady().then(() => {
         resolve({ success: false, error: errorMessage });
       });
 
-      // 子プロセスに起動コマンドを送信
-      serverProcess.send({ command: 'start', port: currentPort, dbPath: dbPath, secretKey: SECRET_KEY });
+      // 子プロセスに起動コマンドを送信。データベースパスも渡す
+      serverProcess.send({ command: 'start', port: currentPort, dbPath: dbPathToUse, secretKey: SECRET_KEY });
       resolve({ success: true, port: currentPort, status: 'starting' });
     });
   });
@@ -125,12 +169,38 @@ app.whenReady().then(() => {
 
   // サーバーの現在の状態を返す
   ipcMain.handle('get-server-status', () => {
-    return { isRunning: isServerRunning, port: currentPort };
+    return { isRunning: isServerRunning, port: currentPort, dbPath: appSettings.dbPath }; // dbPathも返す
   });
 
-  // データベースパスの取得
-  ipcMain.handle('get-db-path', () => {
-    return path.join(app.getPath('userData'), 'chat-database.sqlite');
+  // 【追加】データベースパスを変更するIPCハンドラ
+  ipcMain.handle('set-db-path', async (event, newPath) => {
+    appSettings.dbPath = newPath;
+    saveSettings();
+    // サーバーが実行中の場合は、一旦停止して再起動を促す、または警告を出す
+    if (isServerRunning) {
+      mainWindow.webContents.send('server-log', {
+        message: 'Database path changed. Please stop and restart the server for changes to take effect.',
+        level: 'warn'
+      });
+    }
+    return { success: true, dbPath: appSettings.dbPath };
+  });
+
+  // 【追加】ファイル選択ダイアログを表示するIPCハンドラ
+  ipcMain.handle('open-file-dialog', async (event) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'openDirectory', 'createDirectory'], // ファイルまたはディレクトリを選択可能
+      filters: [
+        { name: 'SQLite Database', extensions: ['sqlite', 'db', 'sqlite3'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (canceled) {
+      return null;
+    } else {
+      return filePaths[0]; // 選択されたパスの最初のものを返す
+    }
   });
 
 });
@@ -158,13 +228,11 @@ async function stopServerInternal(mainWindow) {
       return resolve({ success: true, status: 'stopped' });
     }
 
-    // `exit` イベントハンドラがクリーンアップを行うので、ここではメッセージを送るだけ
     serverProcess.send({ command: 'stop' });
     
-    // 子プロセスからの 'server-status' メッセージを待つためのタイムアウトを設定
     const timeout = setTimeout(() => {
       if (serverProcess) {
-        serverProcess.kill('SIGKILL'); // 強制終了
+        serverProcess.kill('SIGKILL');
         const message = 'Server process did not respond to stop command, forcefully terminated.';
         console.warn(message);
         mainWindow.webContents.send('server-log', { message, level: 'warn' });
@@ -173,7 +241,7 @@ async function stopServerInternal(mainWindow) {
         mainWindow.webContents.send('server-status-update', { status: 'stopped', port: null });
         resolve({ success: false, error: message });
       }
-    }, 5000); // 5秒後に強制終了
+    }, 5000);
 
     serverProcess.once('message', (msg) => {
       if (msg.type === 'server-status' && msg.status === 'stopped') {
@@ -183,7 +251,6 @@ async function stopServerInternal(mainWindow) {
       }
     });
 
-    // forkされたプロセスが終了するまで待つ
     serverProcess.once('exit', () => {
       clearTimeout(timeout);
       console.log('Server process exited after stop command.');

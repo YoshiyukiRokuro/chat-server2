@@ -4,19 +4,23 @@ const startServerBtn = document.getElementById('startServer');
 const stopServerBtn = document.getElementById('stopServer');
 const serverStatusSpan = document.getElementById('serverStatus');
 const currentPortSpan = document.getElementById('currentPort');
-const dbPathSpan = document.getElementById('dbPath');
+const dbPathInput = document.getElementById('dbPathInput'); // 追加
+const browseDbPathBtn = document.getElementById('browseDbPath'); // 追加
+const saveDbPathBtn = document.getElementById('saveDbPath'); // 追加
+const displayedDbPathSpan = document.getElementById('displayedDbPath'); // IDを変更
 const logsDiv = document.getElementById('logs');
 
 // 起動時の初期状態を設定
 async function initializeStatus() {
     const status = await window.electron.getServerStatus();
     updateStatusDisplay(status);
-    const dbPath = await window.electron.getDbPath();
-    dbPathSpan.textContent = dbPath;
+    // 初期設定値としてポートとDBパスをUIに反映
+    portInput.value = status.port || 3000; // ポートの初期値
+    dbPathInput.value = status.dbPath; // 入力フィールドにDBパスをセット
+    displayedDbPathSpan.textContent = status.dbPath; // 表示用UIにDBパスをセット
 }
 
 function updateStatusDisplay(status) {
-    // ここを修正：status.isRunning ではなく status.status === 'running' をチェック
     if (status.status === 'running') {
         serverStatusSpan.textContent = `Running`;
         serverStatusSpan.style.color = 'green';
@@ -24,6 +28,9 @@ function updateStatusDisplay(status) {
         startServerBtn.disabled = true;
         stopServerBtn.disabled = false;
         portInput.disabled = true;
+        dbPathInput.disabled = true; // サーバー実行中はDBパスも変更不可に
+        browseDbPathBtn.disabled = true;
+        saveDbPathBtn.disabled = true;
     } else {
         serverStatusSpan.textContent = `Stopped`;
         serverStatusSpan.style.color = 'red';
@@ -31,6 +38,9 @@ function updateStatusDisplay(status) {
         startServerBtn.disabled = false;
         stopServerBtn.disabled = true;
         portInput.disabled = false;
+        dbPathInput.disabled = false; // サーバー停止中はDBパス変更可能に
+        browseDbPathBtn.disabled = false;
+        saveDbPathBtn.disabled = false;
     }
 }
 
@@ -66,14 +76,39 @@ startServerBtn.addEventListener('click', async () => {
     if (!result.success) {
         appendLog({ type: 'server-log', message: `Failed to start server: ${result.error}`, level: 'error' });
     }
-    // ステータス更新はIPCリスナーで処理される
 });
 
 stopServerBtn.addEventListener('click', async () => {
     appendLog({ type: 'server-log', message: 'Attempting to stop server...', level: 'info' });
     await window.electron.stopServer();
-    // ステータス更新はIPCリスナーで処理される
 });
+
+// 【追加】参照ボタンのイベントリスナー
+browseDbPathBtn.addEventListener('click', async () => {
+    const filePath = await window.electron.openFileDialog();
+    if (filePath) {
+        dbPathInput.value = filePath;
+        appendLog({ type: 'server-log', message: `Selected database path: ${filePath}`, level: 'info' });
+    }
+});
+
+// 【追加】保存ボタンのイベントリスナー
+saveDbPathBtn.addEventListener('click', async () => {
+    const newPath = dbPathInput.value.trim();
+    if (newPath) {
+        appendLog({ type: 'server-log', message: `Saving new database path: ${newPath}...`, level: 'info' });
+        const result = await window.electron.setDbPath(newPath);
+        if (result.success) {
+            displayedDbPathSpan.textContent = result.dbPath; // 表示用UIを更新
+            appendLog({ type: 'server-log', message: `Database path successfully saved: ${result.dbPath}`, level: 'info' });
+        } else {
+            appendLog({ type: 'server-log', message: `Failed to save database path.`, level: 'error' });
+        }
+    } else {
+        appendLog({ type: 'server-log', message: 'Database path cannot be empty.', level: 'warn' });
+    }
+});
+
 
 // メインプロセスからのステータス更新を受信
 window.electron.onServerStatusUpdate((status) => {
