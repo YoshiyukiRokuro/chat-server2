@@ -5,7 +5,7 @@ const { fork } = require('child_process');
 const fs = require('fs'); // fsモジュールを追加
 
 let serverProcess = null;
-let currentPort = 3000;
+let currentPort = 3001;
 let isServerRunning = false;
 const SECRET_KEY = process.env.SECRET_KEY || 'your-default-secret-key';
 
@@ -13,7 +13,7 @@ const SECRET_KEY = process.env.SECRET_KEY || 'your-default-secret-key';
 const settingsFilePath = path.join(app.getPath('userData'), 'settings.json');
 
 let appSettings = {
-  port: 3000,
+  port: 3001,
   dbPath: path.join(app.getPath('userData'), 'chat-database.sqlite')
 };
 
@@ -31,7 +31,7 @@ function loadSettings() {
       }
       // ポートが設定されていない場合はデフォルトに戻す
       if (!appSettings.port) {
-        appSettings.port = 3000;
+        appSettings.port = 3001;
       }
       console.log('Settings loaded:', appSettings);
     }

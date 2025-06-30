@@ -18,7 +18,7 @@ const importUsersBtn = document.getElementById('importUsersBtn');
 async function initializeStatus() {
     const status = await window.electron.getServerStatus();
     updateStatusDisplay(status);
-    portInput.value = status.port || 3000;
+    portInput.value = status.port || 3001;
     dbPathInput.value = status.dbPath;
     displayedDbPathSpan.textContent = status.dbPath;
 }
