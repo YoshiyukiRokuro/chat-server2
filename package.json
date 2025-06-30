@@ -1,12 +1,18 @@
 {
-  "name": "chat-server",
+  "name": "chat-electron-app",
   "version": "1.0.0",
-  "description": "Chat server for qoler-chat",
-  "main": "server.js",
-  "bin": "server.js",
+  "description": "Chat Server GUI with Electron",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js",
-    "build": "pkg ."
+    "start": "electron .",
+    "rebuild-sqlite3": "electron-rebuild -f -w sqlite3"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^29.3.0",
+    "electron-rebuild": "^3.2.9"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -17,14 +23,5 @@
     "jsonwebtoken": "^9.0.2",
     "sqlite3": "^5.1.7",
     "ws": "^8.18.0"
-  },
-  "pkg": {
-    "assets": [
-      "node_modules/sqlite3/build/Release/node_sqlite3.node",
-      "chat-database.sqlite"
-    ],
-    "targets": [
-      "node18-win-x64"
-    ]
   }
 }

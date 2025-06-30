@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Chat Server Controller</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #controls { margin-bottom: 20px; border: 1px solid #ccc; padding: 15px; border-radius: 8px; background-color: #f9f9f9; }
+        #status-info { margin-top: 15px; padding: 10px; border: 1px solid #ddd; background-color: #e9e9e9; border-radius: 5px; }
+        #status-info strong { display: block; margin-bottom: 5px; }
+        #logs { margin-top: 20px; border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: scroll; background-color: #333; color: #eee; font-family: monospace; border-radius: 8px; }
+        .log-entry { margin-bottom: 5px; }
+        .log-info { color: #88cc88; } /* Green */
+        .log-warn { color: #ffcc00; } /* Yellow */
+        .log-error { color: #ff6666; } /* Red */
+        .log-fatal { color: #ff0000; font-weight: bold; } /* Bright Red, Bold */
+        input[type="number"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; }
+        button#startServer { background-color: #28a745; } /* Green */
+        button#stopServer { background-color: #dc3545; } /* Red */
+        button#startServer:disabled { background-color: #6c757d; cursor: not-allowed; }
+        button#stopServer:disabled { background-color: #6c757d; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <h1>Chat Server Controller</h1>
+
+    <div id="controls">
+        <label for="portInput">Server Port:</label>
+        <input type="number" id="portInput" value="3000" min="1024" max="65535">
+        <button id="startServer">サーバー起動</button>
+        <button id="stopServer" disabled>サーバー終了</button>
+
+        <div id="status-info">
+            <strong>Server Status: <span id="serverStatus">Stopped</span></strong>
+            <strong>Current Port: <span id="currentPort">N/A</span></strong>
+            <strong>Database Path: <span id="dbPath">Loading...</span></strong>
+        </div>
+    </div>
+
+    <h2>Logs</h2>
+    <div id="logs"></div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
