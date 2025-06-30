@@ -2,3 +2,4 @@ node_modules/*
 dist/*
 chat-server.exe
 chat-database.sqlite
+member.csv

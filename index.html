@@ -5,7 +5,7 @@
     <title>Chat Server Controller</title>
     <style>
         body { font-family: sans-serif; padding: 20px; }
-        #controls { margin-bottom: 20px; border: 1px solid #ccc; padding: 15px; border-radius: 8px; background-color: #f9f9f9; }
+        #controls, #import-users { margin-bottom: 20px; border: 1px solid #ccc; padding: 15px; border-radius: 8px; background-color: #f9f9f9; }
         #status-info { margin-top: 15px; padding: 10px; border: 1px solid #ddd; background-color: #e9e9e9; border-radius: 5px; }
         #status-info strong { display: block; margin-bottom: 5px; }
         #logs { margin-top: 20px; border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: scroll; background-color: #333; color: #eee; font-family: monospace; border-radius: 8px; }
@@ -14,9 +14,10 @@
         .log-warn { color: #ffcc00; } /* Yellow */
         .log-error { color: #ff6666; } /* Red */
         .log-fatal { color: #ff0000; font-weight: bold; } /* Bright Red, Bold */
-        input[type="number"], input[type="text"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; } /* input[type="text"] を追加 */
-        input#portInput { width: 80px; } /* ポート番号の幅を調整 */
-        input#dbPathInput { width: calc(100% - 130px); margin-right: 5px; } /* データベースパス入力の幅を調整 */
+        input[type="number"], input[type="text"], input[type="file"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; } /* input[type="file"] を追加 */
+        input#portInput { width: 80px; }
+        input#dbPathInput { width: calc(100% - 130px); margin-right: 5px; }
+        input#csvFileInput { width: calc(100% - 150px); margin-right: 5px; } /* CSVファイル入力の幅を調整 */
         button { padding: 10px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; }
         button#startServer { background-color: #28a745; } /* Green */
         button#stopServer { background-color: #dc3545; } /* Red */
@@ -24,6 +25,8 @@
         button#stopServer:disabled { background-color: #6c757d; cursor: not-allowed; }
         button#browseDbPath { background-color: #007bff; } /* Blue for browse button */
         button#saveDbPath { background-color: #17a2b8; } /* Cyan for save button */
+        button#importUsersBtn { background-color: #6610f2; } /* Purple for import button */
+        button#importUsersBtn:disabled { background-color: #6c757d; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -38,14 +41,25 @@
         </div>
         <div style="margin-top: 10px;">
             <label for="dbPathInput">Database Path:</label>
-            <input type="text" id="dbPathInput" readonly> <button id="browseDbPath">参照</button>
+            <input type="text" id="dbPathInput" readonly>
+            <button id="browseDbPath">参照</button>
             <button id="saveDbPath">保存</button>
         </div>
 
         <div id="status-info">
             <strong>Server Status: <span id="serverStatus">Stopped</span></strong>
             <strong>Current Port: <span id="currentPort">N/A</span></strong>
-            <strong>Database Path: <span id="displayedDbPath">Loading...</span></strong> </div>
+            <strong>Database Path: <span id="displayedDbPath">Loading...</span></strong>
+        </div>
+    </div>
+
+    <div id="import-users">
+        <h2>ユーザーインポート (CSV)</h2>
+        <div>
+            <label for="csvFileInput">CSVファイルを選択:</label>
+            <input type="file" id="csvFileInput" accept=".csv">
+            <button id="importUsersBtn" disabled>ユーザーインポート</button>
+        </div>
     </div>
 
     <h2>Logs</h2>

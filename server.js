@@ -9,6 +9,10 @@ const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 
+const multer = require('multer'); // --- 追加 ---
+const csv = require('csv-parser'); // --- 追加 ---
+const { Readable } = require('stream'); // --- 追加 ---
+
 let server = null; // HTTPサーバーインスタンスを保持
 let wss = null;    // WebSocketサーバーインスタンスを保持
 let db = null;     // データベースインスタンスを保持
@@ -17,20 +21,14 @@ const onlineUsers = new Map();
 
 // --- 定数 ---
 const BCRYPT_SALT_ROUNDS = 12;
-// SECRET_KEYは環境変数または引数で渡されることを想定
 let SECRET_KEY = process.env.SECRET_KEY || 'your-default-secret-key'; 
+
+// --- Multer設定 ---
+const upload = multer({ storage: multer.memoryStorage() }); // CSVファイルをメモリに一時保存
 
 // --- データベース設定関数 ---
 function initializeDatabase(dbPath, callback) {
-  if (db) {
-    db.close((err) => {
-      if (err) console.error('Error closing existing database:', err.message);
-      db = null;
-      _initDb();
-    });
-  } else {
-    _initDb();
-  }
+  _initDb();
 
   function _initDb() {
     db = new sqlite3.Database(dbPath, (err) => {
@@ -165,7 +163,7 @@ function setupApiEndpoints(app) {
   app.use(bodyParser.json());
   app.use(bodyParser.urlencoded({ extended: true }));
 
-  // ユーザー登録
+  // ユーザー登録 (既存)
   app.post('/register', async (req, res) => {
     const { id, username, password } = req.body;
 
@@ -197,7 +195,7 @@ function setupApiEndpoints(app) {
     }
   });
 
-  // ログイン
+  // ログイン (既存)
   app.post('/login', (req, res) => {
     const { id, password } = req.body;
     if (!id || !password) {
@@ -227,6 +225,105 @@ function setupApiEndpoints(app) {
       });
     });
   });
+
+  // --- 新しいエンドポイント: CSVからのユーザー登録 ---
+  app.post('/import-users-csv', upload.single('usersCsv'), async (req, res) => {
+
+    if (!req.file || req.file.mimetype !== 'text/csv') {
+      return res.status(400).json({ error: 'CSVファイルが必要です' });
+    }
+
+    const users = [];
+    const importErrors = [];
+    let processedCount = 0;
+    let successCount = 0;
+    let duplicateCount = 0;
+    let invalidDataCount = 0;
+
+    // Readable.from() を使用してBufferからストリームを作成
+    const csvStream = Readable.from(req.file.buffer.toString('utf8'));
+
+    csvStream
+      .pipe(csv({
+        headers: ['id', 'username', 'password'], // CSVのヘッダーを明示的に指定
+        skipHeaders: true, // もしCSVファイルにヘッダー行がない場合、falseに設定
+        strict: true // ヘッダーと行の列数が一致しない場合にエラーを発生させる
+      }))
+      .on('data', (row) => {
+        // パースされた行をユーザーリストに追加
+        users.push(row);
+      })
+      .on('end', async () => {
+        if (process.send) process.send({ type: 'server-log', message: `CSV data parsed. Found ${users.length} users. Starting import...`, level: 'info' });
+        console.log(`CSV data parsed. Found ${users.length} users. Starting import...`);
+
+        // データベーストランザクションを開始
+        db.serialize(async () => {
+          db.run('BEGIN TRANSACTION;');
+          const stmt = db.prepare('INSERT INTO users (id, username, password) VALUES (?, ?, ?)');
+
+          for (const user of users) {
+            processedCount++;
+            const { id, username, password } = user;
+
+            // データ検証
+            if (!id || !username || !password || !/^\d{1,5}$/.test(id)) {
+              importErrors.push(`Row ${processedCount}: Invalid data (ID: ${id || 'N/A'}, Username: ${username || 'N/A'}). ID must be 1-5 digits.`);
+              invalidDataCount++;
+              continue;
+            }
+
+            try {
+              const hashedPassword = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+              // Promise based run to await db operations in loop
+              await new Promise((resolve, reject) => {
+                stmt.run(id, username, hashedPassword, function (err) {
+                  if (err) {
+                    if (err.code === 'SQLITE_CONSTRAINT') {
+                      importErrors.push(`Row ${processedCount}: User with ID ${id} already exists.`);
+                      duplicateCount++;
+                    } else {
+                      importErrors.push(`Row ${processedCount}: Database error for ID ${id}: ${err.message}`);
+                    }
+                    return reject(err); // reject to catch in outer try/catch
+                  }
+                  successCount++;
+                  resolve();
+                });
+              });
+            } catch (error) {
+                // Error handled by the promise reject, continue loop for next user
+                // The specific error is already pushed to importErrors
+            }
+          }
+
+          stmt.finalize();
+
+          // トランザクションをコミットまたはロールバック
+          if (importErrors.length > 0) {
+            db.run('ROLLBACK;');
+            if (process.send) process.send({ type: 'server-log', message: 'Import completed with errors. Transaction rolled back.', level: 'warn' });
+            console.warn('Import completed with errors. Transaction rolled back.');
+            return res.status(200).json({
+              message: `Users import finished with ${successCount} successful, ${duplicateCount} duplicates, ${invalidDataCount} invalid, ${importErrors.length - duplicateCount - invalidDataCount} other errors.`,
+              errors: importErrors
+            });
+          } else {
+            db.run('COMMIT;');
+            if (process.send) process.send({ type: 'server-log', message: `Successfully imported ${successCount} users.`, level: 'info' });
+            console.log(`Successfully imported ${successCount} users.`);
+            return res.status(201).json({ message: `Successfully imported ${successCount} users.` });
+          }
+        });
+      })
+      .on('error', (error) => {
+        if (process.send) process.send({ type: 'server-log', message: `CSV parsing error: ${error.message}`, level: 'error' });
+        console.error('CSV parsing error:', error);
+        res.status(500).json({ error: `CSVファイルの処理中にエラーが発生しました: ${error.message}` });
+      });
+  });
+  // --- 新しいエンドポイントここまで ---
+
 
   app.get('/channels', authenticateToken, (req, res) => {
     db.all('SELECT id, name, is_deletable FROM channels ORDER BY id ASC', [], (err, rows) => {
@@ -292,7 +389,6 @@ function setupApiEndpoints(app) {
     `;
     db.all(sql, [channelId], (err, rows) => {
       if (err) {
-        if (process.send) process.send({ type: 'server-log', message: `Messages DB error for channel ${channelId}: ${err.message}`, level: 'error' });
         res.status(500).json({ error: err.message });
         return;
       }
@@ -311,7 +407,6 @@ function setupApiEndpoints(app) {
     const stmt = db.prepare('INSERT INTO messages (channelId, user, text, replyToId) VALUES (?, ?, ?, ?)');
     stmt.run(channelId, user, text, replyToId || null, function (err) {
       if (err) {
-        if (process.send) process.send({ type: 'server-log', message: `Message insertion error: ${err.message}`, level: 'error' });
         return res.status(500).json({ error: err.message });
       }
       const newId = this.lastID;
@@ -325,7 +420,6 @@ function setupApiEndpoints(app) {
       `;
       db.get(sql, [newId], (err, newMessage) => {
         if (err) {
-          if (process.send) process.send({ type: 'server-log', message: `Failed to fetch new message for broadcast: ${err.message}`, level: 'error' });
           console.error("Failed to fetch new message for broadcast:", err);
           return res.status(201).json({ id: newId, channelId, user, text, timestamp: new Date().toISOString(), replyToId });
         }
@@ -344,18 +438,12 @@ function setupApiEndpoints(app) {
     const user = req.user;
 
     db.get('SELECT user FROM messages WHERE id = ?', [messageId], (err, row) => {
-      if (err) {
-        if (process.send) process.send({ type: 'server-log', message: `Message delete DB error: ${err.message}`, level: 'error' });
-        return res.status(500).json({ error: 'データベースエラー' });
-      }
+      if (err) return res.status(500).json({ error: 'データベースエラー' });
       if (!row) return res.status(404).json({ error: 'メッセージが見つかりません' });
       if (row.user !== user.username) return res.status(403).json({ error: 'このメッセージを削除する権限がありません' });
       
       db.run('DELETE FROM messages WHERE id = ?', [messageId], function (err) {
-        if (err) {
-          if (process.send) process.send({ type: 'server-log', message: `Message deletion failed: ${err.message}`, level: 'error' });
-          return res.status(500).json({ error: 'メッセージの削除に失敗しました' });
-        }
+        if (err) return res.status(500).json({ error: 'メッセージの削除に失敗しました' });
         broadcast({ type: 'message_deleted', id: Number(messageId) });
         res.status(200).json({ message: 'メッセージを削除しました' });
       });
@@ -376,10 +464,7 @@ function setupApiEndpoints(app) {
       last_read_message_id = excluded.last_read_message_id
     `);
     stmt.run(userId, channelId, lastMessageId, (err) => {
-      if (err) {
-        if (process.send) process.send({ type: 'server-log', message: `Read status update error: ${err.message}`, level: 'error' });
-        return res.status(500).json({ error: '読み取りステータスの更新に失敗しました' });
-      }
+      if (err) return res.status(500).json({ error: '読み取りステータスの更新に失敗しました' });
       res.status(200).json({ message: 'Read status updated' });
     });
     stmt.finalize();
@@ -388,25 +473,16 @@ function setupApiEndpoints(app) {
   app.get('/messages/unread-counts', authenticateToken, (req, res) => {
     const userId = req.user.id;
     db.all('SELECT channelId, MAX(id) as max_id FROM messages GROUP BY channelId', [], (err, latestMessages) => {
-      if (err) {
-        if (process.send) process.send({ type: 'server-log', message: `Unread counts latest messages error: ${err.message}`, level: 'error' });
-        return res.status(500).json({ error: '最新のメッセージを取得できませんでした' });
-      }
+      if (err) return res.status(500).json({ error: '最新のメッセージを取得できませんでした' });
       db.all('SELECT channel_id, last_read_message_id FROM read_receipts WHERE user_id = ?', [userId], (err, readReceipts) => {
-        if (err) {
-          if (process.send) process.send({ type: 'server-log', message: `Unread counts read receipts error: ${err.message}`, level: 'error' });
-          return res.status(500).json({ error: '開封確認を取得できませんでした' });
-        }
+        if (err) return res.status(500).json({ error: '開封確認を取得できませんでした' });
         const readReceiptsMap = new Map(readReceipts.map(r => [r.channel_id, r.last_read_message_id]));
         const unreadCounts = {};
         const promises = latestMessages.map(lm => {
           return new Promise((resolve, reject) => {
             const lastReadId = readReceiptsMap.get(lm.channelId) || 0;
             db.get('SELECT COUNT(*) as count FROM messages WHERE channelId = ? AND id > ?', [lm.channelId, lastReadId], (err, result) => {
-              if (err) {
-                if (process.send) process.send({ type: 'server-log', message: `Unread count query error for channel ${lm.channelId}: ${err.message}`, level: 'error' });
-                return reject(err);
-              }
+              if (err) return reject(err);
               unreadCounts[lm.channelId] = result.count;
               resolve();
             });
@@ -414,10 +490,7 @@ function setupApiEndpoints(app) {
         });
         Promise.all(promises)
           .then(() => res.json(unreadCounts))
-          .catch(error => {
-            if (process.send) process.send({ type: 'server-log', message: `Error counting unread messages: ${error.message}`, level: 'error' });
-            res.status(500).json({ error: '未読数のカウント中にエラーが発生しました' });
-          });
+          .catch(error => res.status(500).json({ error: '未読数のカウント中にエラーが発生しました' }));
       });
     });
   });
@@ -426,10 +499,7 @@ function setupApiEndpoints(app) {
     const { channelId } = req.params;
     const userId = req.user.id;
     db.get('SELECT last_read_message_id FROM read_receipts WHERE user_id = ? AND channel_id = ?', [userId, channelId], (err, row) => {
-      if (err) {
-        if (process.send) process.send({ type: 'server-log', message: `Last read DB error: ${err.message}`, level: 'error' });
-        return res.status(500).json({ error: 'データベースエラーです' });
-      }
+      if (err) return res.status(500).json({ error: 'データベースエラーです' });
       res.json({ last_read_message_id: row ? row.last_read_message_id : 0 });
     });
   });
@@ -439,7 +509,6 @@ function setupApiEndpoints(app) {
     res.json(userList);
   });
 
-  // 自動ログイン用エンドポイント
   app.post('/login/auto', (req, res) => {
     const { id } = req.body;
     if (!id) {
@@ -448,7 +517,6 @@ function setupApiEndpoints(app) {
 
     db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
       if (err) {
-        if (process.send) process.send({ type: 'server-log', message: `Auto login DB error: ${err.message}`, level: 'error' });
         return res.status(500).json({ error: err.message });
       }
       if (!user) {
@@ -507,47 +575,113 @@ function startServer(port, dbFilePath, secretKey) {
 // --- サーバー停止関数 ---
 function stopServer() {
   return new Promise((resolve, reject) => {
-    if (!server || !server.listening) {
-      if (process.send) process.send({ type: 'server-log', message: 'Server is not running.', level: 'warn' });
-      console.warn('Server is not running.');
+    if (!server && !wss && !db) {
+      if (process.send) process.send({ type: 'server-log', message: 'Server is not running or already stopped. [stopServer]', level: 'warn' });
+      console.warn('Server is not running or already stopped.');
       return resolve();
     }
 
-    wss.clients.forEach(client => {
-      if (client.readyState === client.OPEN) {
-        client.close(1001, "Server shutting down"); // 1001: Going Away
-      }
-    });
-    wss.close(() => {
-      if (process.send) process.send({ type: 'server-log', message: 'WebSocket server closed.', level: 'info' });
-      console.log('WebSocket server closed.');
-    });
-    onlineUsers.clear(); // オンラインユーザーリストをクリア
+    const closePromises = [];
 
-    server.close((err) => {
-      if (err) {
-        if (process.send) process.send({ type: 'server-log', message: `Error stopping server: ${err.message}`, level: 'error' });
-        console.error('Error stopping server:', err);
-        return reject(err);
-      }
-      if (db) {
-        db.close((err) => {
-          if (err) {
-            if (process.send) process.send({ type: 'server-log', message: `Error closing database: ${err.message}`, level: 'error' });
-            console.error('Error closing database:', err.message);
-          } else {
-            if (process.send) process.send({ type: 'server-log', message: 'Database closed.', level: 'info' });
-            console.log('Database closed.');
+    // 1. WebSocketサーバーのクローズ
+    if (wss) {
+      closePromises.push(new Promise(wsResolve => {
+        wss.clients.forEach(client => {
+          if (client.readyState === client.OPEN) {
+            client.close(1001, "Server shutting down");
           }
-          db = null; // db参照をクリア
         });
-      }
-      if (process.send) process.send({ type: 'server-status', status: 'stopped', port: null });
-      if (process.send) process.send({ type: 'server-log', message: 'Server successfully stopped.', level: 'info' });
-      console.log('Server successfully stopped.');
-      server = null; // server参照をクリア
-      resolve();
-    });
+        wss.close(() => {
+          if (process.send) process.send({ type: 'server-log', message: 'WebSocket server successfully closed. [stopServer]', level: 'info' });
+          console.log('WebSocket server closed.');
+          wss = null;
+          wsResolve();
+        });
+      }));
+      onlineUsers.clear();
+    } else {
+      closePromises.push(Promise.resolve().then(() => {
+        if (process.send) process.send({ type: 'server-log', message: 'WebSocket server was not active. [stopServer]', level: 'info' });
+      }));
+    }
+
+    // 2. HTTPサーバーのクローズ
+    if (server) {
+      closePromises.push(new Promise((httpResolve, httpReject) => {
+        server.close((err) => {
+          if (err) {
+            if (process.send) process.send({ type: 'server-log', message: `Error stopping HTTP server: ${err.message}. [stopServer]`, level: 'error' });
+            console.error('Error stopping HTTP server:', err);
+            httpReject(err);
+          } else {
+            if (process.send) process.send({ type: 'server-log', message: 'HTTP server successfully closed. [stopServer]', level: 'info' });
+            console.log('HTTP server closed.');
+            server = null;
+            httpResolve();
+          }
+        });
+      }));
+    } else {
+      closePromises.push(Promise.resolve().then(() => {
+        if (process.send) process.send({ type: 'server-log', message: 'HTTP server was not active. [stopServer]', level: 'info' });
+      }));
+    }
+
+    // 3. データベースのクローズ (タイムアウトを追加)
+    if (db) {
+      closePromises.push(new Promise((dbResolve) => {
+        let dbClosed = false;
+        const dbTimeout = setTimeout(() => {
+          if (!dbClosed) {
+            if (process.send) process.send({ type: 'server-log', message: 'Database close timed out. Forcing resolution of DB close promise. [stopServer]', level: 'warn' });
+            console.warn('Database close timed out. Forcing resolution of DB close promise.');
+            db = null;
+            dbResolve();
+          }
+        }, 4000); // データベースクローズのタイムアウトを4秒に設定
+
+        db.close((err) => {
+          clearTimeout(dbTimeout);
+          dbClosed = true;
+          if (err) {
+            if (process.send) process.send({ type: 'server-log', message: `Error closing database: ${err.message}. [stopServer]`, level: 'error' });
+            console.error('Error closing database:', err.message);
+            db = null;
+            dbResolve();
+          } else {
+            if (process.send) process.send({ type: 'server-log', message: 'Database successfully closed. [stopServer]', level: 'info' });
+            console.log('Database closed.');
+            db = null;
+            dbResolve();
+          }
+        });
+      }));
+    } else {
+      closePromises.push(Promise.resolve().then(() => {
+        if (process.send) process.send({ type: 'server-log', message: 'Database was not active. [stopServer]', level: 'info' });
+      }));
+    }
+
+    // 全てのクローズ処理が完了するのを待つ
+    Promise.allSettled(closePromises)
+      .then((results) => {
+        const hasError = results.some(result => result.status === 'rejected');
+        if (hasError) {
+            if (process.send) process.send({ type: 'server-log', message: 'Some components failed to stop gracefully. Check logs for details. [stopServer]', level: 'error' });
+            console.error('Some components failed to stop gracefully. Check logs for details.');
+        }
+
+        if (process.send) process.send({ type: 'server-log', message: 'All components attempted to close. Sending final status. [stopServer]', level: 'info' });
+        if (process.send) process.send({ type: 'server-status', status: 'stopped', port: null });
+        if (process.send) process.send({ type: 'server-log', message: 'Server successfully stopped and child process preparing to exit. [stopServer]', level: 'info' });
+        console.log('Server successfully stopped.');
+        resolve();
+      })
+      .catch(error => {
+        if (process.send) process.send({ type: 'server-log', message: `Unexpected error during server stop: ${error.message}. [stopServer]`, level: 'fatal' });
+        console.error('Unexpected error during server stop:', error);
+        reject(error);
+      });
   });
 }
 
@@ -584,8 +718,7 @@ if (require.main === module) {
   process.on('uncaughtException', (err) => {
     if (process.send) process.send({ type: 'server-log', message: `Uncaught Exception: ${err.message}\n${err.stack}`, level: 'fatal' });
     console.error('Uncaught Exception:', err);
-    // 適切なクリーンアップの後、プロセスを終了する
-    stopServer().finally(() => process.exit(1));
+    stopServer().finally(() => process.exit(1)); // 強制終了ではなく、クリーンアップ後に終了
   });
 
   if (process.send) process.send({ type: 'server-log', message: 'Server child process initialized, waiting for commands...', level: 'info' });

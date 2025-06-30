@@ -4,20 +4,23 @@ const startServerBtn = document.getElementById('startServer');
 const stopServerBtn = document.getElementById('stopServer');
 const serverStatusSpan = document.getElementById('serverStatus');
 const currentPortSpan = document.getElementById('currentPort');
-const dbPathInput = document.getElementById('dbPathInput'); // 追加
-const browseDbPathBtn = document.getElementById('browseDbPath'); // 追加
-const saveDbPathBtn = document.getElementById('saveDbPath'); // 追加
-const displayedDbPathSpan = document.getElementById('displayedDbPath'); // IDを変更
+const dbPathInput = document.getElementById('dbPathInput');
+const browseDbPathBtn = document.getElementById('browseDbPath');
+const saveDbPathBtn = document.getElementById('saveDbPath');
+const displayedDbPathSpan = document.getElementById('displayedDbPath');
 const logsDiv = document.getElementById('logs');
+
+// --- ユーザーインポート関連のUI要素を追加 ---
+const csvFileInput = document.getElementById('csvFileInput');
+const importUsersBtn = document.getElementById('importUsersBtn');
 
 // 起動時の初期状態を設定
 async function initializeStatus() {
     const status = await window.electron.getServerStatus();
     updateStatusDisplay(status);
-    // 初期設定値としてポートとDBパスをUIに反映
-    portInput.value = status.port || 3000; // ポートの初期値
-    dbPathInput.value = status.dbPath; // 入力フィールドにDBパスをセット
-    displayedDbPathSpan.textContent = status.dbPath; // 表示用UIにDBパスをセット
+    portInput.value = status.port || 3000;
+    dbPathInput.value = status.dbPath;
+    displayedDbPathSpan.textContent = status.dbPath;
 }
 
 function updateStatusDisplay(status) {
@@ -28,9 +31,13 @@ function updateStatusDisplay(status) {
         startServerBtn.disabled = true;
         stopServerBtn.disabled = false;
         portInput.disabled = true;
-        dbPathInput.disabled = true; // サーバー実行中はDBパスも変更不可に
+        dbPathInput.disabled = true;
         browseDbPathBtn.disabled = true;
         saveDbPathBtn.disabled = true;
+        
+        // サーバー起動中はインポートボタンを有効化
+        importUsersBtn.disabled = false; 
+        csvFileInput.disabled = false;
     } else {
         serverStatusSpan.textContent = `Stopped`;
         serverStatusSpan.style.color = 'red';
@@ -38,9 +45,13 @@ function updateStatusDisplay(status) {
         startServerBtn.disabled = false;
         stopServerBtn.disabled = true;
         portInput.disabled = false;
-        dbPathInput.disabled = false; // サーバー停止中はDBパス変更可能に
+        dbPathInput.disabled = false;
         browseDbPathBtn.disabled = false;
         saveDbPathBtn.disabled = false;
+
+        // サーバー停止中はインポートボタンを無効化
+        importUsersBtn.disabled = true;
+        csvFileInput.disabled = true;
     }
 }
 
@@ -66,7 +77,7 @@ function appendLog(log) {
     logEntry.classList.add('log-entry', levelClass);
     logEntry.textContent = `[${log.level.toUpperCase()}] ${log.message}`;
     logsDiv.appendChild(logEntry);
-    logsDiv.scrollTop = logsDiv.scrollHeight; // スクロールを一番下へ
+    logsDiv.scrollTop = logsDiv.scrollHeight;
 }
 
 startServerBtn.addEventListener('click', async () => {
@@ -83,7 +94,6 @@ stopServerBtn.addEventListener('click', async () => {
     await window.electron.stopServer();
 });
 
-// 【追加】参照ボタンのイベントリスナー
 browseDbPathBtn.addEventListener('click', async () => {
     const filePath = await window.electron.openFileDialog();
     if (filePath) {
@@ -92,14 +102,13 @@ browseDbPathBtn.addEventListener('click', async () => {
     }
 });
 
-// 【追加】保存ボタンのイベントリスナー
 saveDbPathBtn.addEventListener('click', async () => {
     const newPath = dbPathInput.value.trim();
     if (newPath) {
         appendLog({ type: 'server-log', message: `Saving new database path: ${newPath}...`, level: 'info' });
         const result = await window.electron.setDbPath(newPath);
         if (result.success) {
-            displayedDbPathSpan.textContent = result.dbPath; // 表示用UIを更新
+            displayedDbPathSpan.textContent = result.dbPath;
             appendLog({ type: 'server-log', message: `Database path successfully saved: ${result.dbPath}`, level: 'info' });
         } else {
             appendLog({ type: 'server-log', message: `Failed to save database path.`, level: 'error' });
@@ -109,6 +118,60 @@ saveDbPathBtn.addEventListener('click', async () => {
     }
 });
 
+// --- ユーザーインポートボタンのイベントリスナーを追加 ---
+importUsersBtn.addEventListener('click', async () => {
+    const file = csvFileInput.files[0];
+    if (!file) {
+        appendLog({ type: 'server-log', message: 'Please select a CSV file.', level: 'warn' });
+        return;
+    }
+
+    if (file.type !== 'text/csv') {
+        appendLog({ type: 'server-log', message: 'Selected file is not a CSV. Please select a .csv file.', level: 'warn' });
+        return;
+    }
+
+    // サーバーが起動しているか確認
+    const status = await window.electron.getServerStatus();
+    if (!status.isRunning) {
+        appendLog({ type: 'server-log', message: 'Server is not running. Please start the server before importing users.', level: 'error' });
+        return;
+    }
+
+    appendLog({ type: 'server-log', message: `Importing users from ${file.name}...`, level: 'info' });
+    importUsersBtn.disabled = true; // 多重クリック防止
+    csvFileInput.disabled = true;
+
+    const formData = new FormData();
+    formData.append('usersCsv', file); // サーバー側の `upload.single('usersCsv')` に対応
+
+    try {
+        const response = await fetch(`http://localhost:${status.port}/import-users-csv`, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            appendLog({ type: 'server-log', message: `User import successful: ${data.message}`, level: 'info' });
+            if (data.errors && data.errors.length > 0) {
+                data.errors.forEach(err => appendLog({ type: 'server-log', message: `Import Warning/Error: ${err}`, level: 'warn' }));
+            }
+        } else {
+            appendLog({ type: 'server-log', message: `User import failed: ${data.error || response.statusText}`, level: 'error' });
+            if (data.errors && data.errors.length > 0) {
+                data.errors.forEach(err => appendLog({ type: 'server-log', message: `Import Details: ${err}`, level: 'error' }));
+            }
+        }
+    } catch (error) {
+        appendLog({ type: 'server-log', message: `Network or server error during import: ${error.message}`, level: 'error' });
+    } finally {
+        importUsersBtn.disabled = false; // ボタンを再有効化
+        csvFileInput.disabled = false;
+        csvFileInput.value = ''; // ファイル選択をクリア
+    }
+});
 
 // メインプロセスからのステータス更新を受信
 window.electron.onServerStatusUpdate((status) => {

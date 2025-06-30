@@ -6,14 +6,14 @@
   "scripts": {
     "start": "electron .",
     "rebuild-sqlite3": "electron-rebuild -f -w sqlite3",
-    "dist": "electron-builder --win" 
+    "dist": "electron-builder --win"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "electron": "^29.3.0",
-    "electron-builder": "^24.9.1", 
+    "electron-builder": "^24.9.1",
     "electron-rebuild": "^3.2.9"
   },
   "dependencies": {
@@ -24,22 +24,24 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "sqlite3": "^5.1.7",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "multer": "^1.4.5-lts.1",
+    "csv-parser": "^3.0.0"
   },
-  "build": { 
-    "appId": "com.yourcompany.chatservergui", 
-    "productName": "Chat Server GUI",        
+  "build": {
+    "appId": "com.yourcompany.chatservergui",
+    "productName": "Chat Server GUI",
     "files": [
       "**/*",
-      "!node_modules/${os}/${arch}/.*", 
-      "node_modules/sqlite3/build/Release/node_sqlite3.node" 
+      "!node_modules/${os}/${arch}/.*",
+      "node_modules/sqlite3/build/Release/node_sqlite3.node"
     ],
-    "extraFiles": [ 
-      "chat-database.sqlite" 
+    "extraFiles": [
+      "chat-database.sqlite"
     ],
     "win": {
-      "target": "dir", 
-      "icon": "build/icon.ico" 
+      "target": "nsis",
+      "icon": "build/icon.ico"
     }
   }
 }
