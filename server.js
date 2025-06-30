@@ -67,7 +67,7 @@ function initializeDatabase(dbPath, callback) {
               channelId INTEGER,
               user TEXT,
               text TEXT,
-              timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+              timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
               replyToId INTEGER,
               FOREIGN KEY(channelId) REFERENCES channels(id) ON DELETE CASCADE,
               FOREIGN KEY(replyToId) REFERENCES messages(id) ON DELETE SET NULL
