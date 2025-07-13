@@ -165,6 +165,7 @@ importUsersBtn.addEventListener('click', async () => {
             }
         }
     } catch (error) {
+        console.log(error);
         appendLog({ type: 'server-log', message: `Network or server error during import: ${error.message}`, level: 'error' });
     } finally {
         importUsersBtn.disabled = false; // ボタンを再有効化
