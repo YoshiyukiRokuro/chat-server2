@@ -29,7 +29,7 @@ function initializeDatabase(dbPath, callback) {
     db.run("PRAGMA foreign_keys = ON;");
     db.serialize(() => {
       db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT NOT NULL, password TEXT NOT NULL, UNIQUE(id))`);
-      db.exec(`CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, is_deletable BOOLEAN DEFAULT 1, is_group BOOLEAN DEFAULT 0, creator_id INTEGER, FOREIGN KEY(creator_id) REFERENCES users(id) ON DELETE SET NULL)`);
+      db.run(`CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, is_deletable BOOLEAN DEFAULT 1, is_group BOOLEAN DEFAULT 0, creator_id INTEGER, FOREIGN KEY(creator_id) REFERENCES users(id) ON DELETE SET NULL)`);
       db.run(`CREATE TABLE IF NOT EXISTS channel_members (channel_id INTEGER NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (channel_id, user_id), FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)`);
       db.run(`CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, channelId INTEGER, user TEXT, text TEXT, timestamp DATETIME DEFAULT (datetime('now', 'localtime')), replyToId INTEGER, FOREIGN KEY(channelId) REFERENCES channels(id) ON DELETE CASCADE, FOREIGN KEY(replyToId) REFERENCES messages(id) ON DELETE SET NULL)`);
       db.run(`CREATE TABLE IF NOT EXISTS read_receipts (user_id INTEGER NOT NULL, channel_id INTEGER NOT NULL, last_read_message_id INTEGER NOT NULL, PRIMARY KEY (user_id, channel_id), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE)`);
