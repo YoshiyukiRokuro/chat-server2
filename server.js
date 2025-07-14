@@ -33,7 +33,7 @@ function initializeDatabase(dbPath, callback) {
       db.run(`CREATE TABLE IF NOT EXISTS channel_members (channel_id INTEGER NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (channel_id, user_id), FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)`);
       db.run(`CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, channelId INTEGER, user TEXT, text TEXT, timestamp DATETIME DEFAULT (datetime('now', 'localtime')), replyToId INTEGER, FOREIGN KEY(channelId) REFERENCES channels(id) ON DELETE CASCADE, FOREIGN KEY(replyToId) REFERENCES messages(id) ON DELETE SET NULL)`);
       db.run(`CREATE TABLE IF NOT EXISTS read_receipts (user_id INTEGER NOT NULL, channel_id INTEGER NOT NULL, last_read_message_id INTEGER NOT NULL, PRIMARY KEY (user_id, channel_id), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE)`);
-      ["連絡", "雑談"].forEach((name) => db.run("INSERT OR IGNORE INTO channels (name, is_deletable, is_group) VALUES (?, 0, 0)", [name]));
+      // ["連絡", "雑談"].forEach((name) => db.run("INSERT OR IGNORE INTO channels (name, is_deletable, is_group) VALUES (?, 0, 0)", [name]));
       callback(null);
     });
   });
@@ -116,6 +116,37 @@ function setupApiEndpoints(app) {
     } catch (error) {
       res.status(500).json({ error: "登録処理でサーバーエラーが発生しました" });
     }
+  });
+
+
+  app.post("/login/auto", (req, res) => {
+    const { id } = req.body;
+    if (!id) {
+      return res.status(400).json({ error: "職員IDは必須です" });
+    }
+
+    db.get("SELECT * FROM users WHERE id = ?", [id], (err, user) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (!user) {
+        return res
+          .status(404)
+          .json({ error: "指定された職員IDのユーザーが見つかりません" });
+      }
+
+      const token = jwt.sign(
+        { id: user.id, username: user.username },
+        SECRET_KEY,
+        { expiresIn: "1h" }
+      );
+
+      res.json({
+        message: "Automatic login successful",
+        user: { id: user.id, username: user.username },
+        token: token,
+      });
+    });
   });
 
   app.post("/login", (req, res) => {
