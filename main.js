@@ -28,7 +28,11 @@ function loadSettings() {
 
 function saveSettings() {
   try {
-    fs.writeFileSync(settingsFilePath, JSON.stringify(appSettings, null, 2), "utf8");
+    fs.writeFileSync(
+      settingsFilePath,
+      JSON.stringify(appSettings, null, 2),
+      "utf8"
+    );
   } catch (error) {
     console.error("Failed to save settings:", error);
   }
@@ -46,7 +50,11 @@ function updateServerStatus(status, port, error = null) {
   isServerRunning = status === "running";
   currentPort = port;
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("server-status-update", { status, port, error });
+    mainWindow.webContents.send("server-status-update", {
+      status,
+      port,
+      error,
+    });
   }
 }
 
@@ -110,9 +118,9 @@ ipcMain.handle("stop-server", async () => {
 });
 
 ipcMain.handle("get-server-status", () => ({
-    isRunning: isServerRunning,
-    port: isServerRunning ? currentPort : appSettings.port,
-    dbPath: appSettings.dbPath,
+  isRunning: isServerRunning,
+  port: isServerRunning ? currentPort : appSettings.port,
+  dbPath: appSettings.dbPath,
 }));
 
 ipcMain.handle("set-db-path", async (event, newPath) => {
