@@ -344,6 +344,18 @@ function setupApiEndpoints(app) {
     });
   });
 
+  app.get("/messages/last-read-ids", authenticateToken, (req, res) => {
+    const sql = `SELECT channel_id, last_read_message_id FROM read_receipts WHERE user_id = ?`;
+    db.all(sql, [req.user.id], (err, rows) => {
+      if (err) return res.status(500).json({});
+      const lastReadIds = rows.reduce(
+        (acc, row) => ({ ...acc, [row.channel_id]: row.last_read_message_id }),
+        {}
+      );
+      res.json(lastReadIds);
+    });
+  });
+  
   app.get("/messages/:channelId", authenticateToken, (req, res) => {
     isChannelMember(req.params.channelId, req.user.id, (err, isMember) => {
       if (err || !isMember)
